@@ -1,9 +1,9 @@
 name: Local clone transfer
 
 on:
-  push:
+  pull_request:
     branches:
-      - automation/local-clone-transfer-20260727
+      - main
   workflow_dispatch:
 
 permissions:
