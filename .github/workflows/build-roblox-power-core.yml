@@ -1,0 +1,72 @@
+name: Build Roblox Power Core
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-asset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out generator
+        uses: actions/checkout@v4
+
+      - name: Download official portable Blender 5.2
+        run: |
+          set -euxo pipefail
+          URL="https://download.blender.org/release/Blender5.2/blender-5.2.0-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 3 "$URL" --output /tmp/blender-5.2.0-linux-x64.tar.xz
+          mkdir -p /tmp/blender-runtime
+          tar -xJf /tmp/blender-5.2.0-linux-x64.tar.xz -C /tmp/blender-runtime --strip-components=1
+          /tmp/blender-runtime/blender --version
+
+      - name: Compile generator scripts
+        run: |
+          python3 -m py_compile \
+            tools/roblox_power_core/build_power_core.py \
+            tools/roblox_power_core/validate_power_core.py
+
+      - name: Build asset headlessly
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/power-core-output
+          /tmp/blender-runtime/blender \
+            --background \
+            --factory-startup \
+            --python tools/roblox_power_core/build_power_core.py -- \
+            --output /tmp/power-core-output
+
+      - name: Validate asset headlessly
+        run: |
+          set -euxo pipefail
+          /tmp/blender-runtime/blender \
+            --background \
+            --factory-startup \
+            --python tools/roblox_power_core/validate_power_core.py -- \
+            --blend /tmp/power-core-output/ArcadePowerCore.blend \
+            --output /tmp/power-core-output
+          find /tmp/power-core-output -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+
+      - name: Upload generated Roblox asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: roblox-arcade-power-core
+          path: /tmp/power-core-output/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload portable Blender runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-5.2.0-linux-x64-runtime
+          path: /tmp/blender-5.2.0-linux-x64.tar.xz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
