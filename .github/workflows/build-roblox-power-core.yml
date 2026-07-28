@@ -8,12 +8,25 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   build-asset:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Remove previous temporary transfer artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          curl --silent --show-error --location \
+            --request DELETE \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8674542617" || true
+
       - name: Check out generator
         uses: actions/checkout@v4
 
@@ -42,7 +55,7 @@ jobs:
             --python tools/roblox_power_core/build_power_core.py -- \
             --output /tmp/power-core-output
 
-      - name: Validate asset headlessly
+      - name: Validate and package asset
         run: |
           set -euxo pipefail
           /tmp/blender-runtime/blender \
@@ -52,12 +65,14 @@ jobs:
             --blend /tmp/power-core-output/ArcadePowerCore.blend \
             --output /tmp/power-core-output
           find /tmp/power-core-output -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          tar -cJf /tmp/roblox-arcade-power-core.tar.xz -C /tmp/power-core-output .
+          sha256sum /tmp/roblox-arcade-power-core.tar.xz /tmp/blender-5.2.0-linux-x64.tar.xz
 
-      - name: Upload generated Roblox asset
+      - name: Upload generated Roblox asset package
         uses: actions/upload-artifact@v4
         with:
           name: roblox-arcade-power-core
-          path: /tmp/power-core-output/
+          path: /tmp/roblox-arcade-power-core.tar.xz
           compression-level: 0
           retention-days: 1
           if-no-files-found: error
