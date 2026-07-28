@@ -1,0 +1,45 @@
+name: Local clone transfer
+
+on:
+  push:
+    branches:
+      - automation/local-clone-transfer-20260727
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Clone shallow main checkout
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1"
+        run: |
+          set -euxo pipefail
+          git clone \
+            --depth 1 \
+            --single-branch \
+            --branch main \
+            https://github.com/Chrisbryan17/blender.git \
+            /tmp/blender
+          git -C /tmp/blender remote add upstream https://github.com/blender/blender.git
+          git -C /tmp/blender status --short --branch
+          git -C /tmp/blender rev-parse HEAD
+
+      - name: Package checkout with Git metadata
+        run: |
+          set -euxo pipefail
+          tar --zstd -cf /tmp/blender-local-shallow.tar.zst -C /tmp blender
+          ls -lh /tmp/blender-local-shallow.tar.zst
+
+      - name: Upload checkout artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-local-shallow
+          path: /tmp/blender-local-shallow.tar.zst
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
