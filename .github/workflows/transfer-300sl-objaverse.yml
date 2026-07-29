@@ -1,4 +1,4 @@
-name: Transfer 300SL Objaverse Source
+name: Transfer 300SL Mirror Source
 
 on:
   pull_request:
@@ -10,53 +10,32 @@ permissions:
 jobs:
   transfer:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Download CC BY 300SL model through Objaverse
+      - name: Locate and download archived CC 300SL source
+        shell: bash
         run: |
-          python -m pip install --disable-pip-version-check objaverse
-          python - <<'PY'
-          import json
-          import shutil
-          from pathlib import Path
-          import objaverse
-
-          candidates = [
-              'f70d74f86cac4cbfa77d43d64aed256b',
-              '65edd5814c9842bb9c769388d13fa27f',
-              '505241c829c540a4921533000736904e',
-              '3f49492bbed14d89b43cdc3efd5993c2',
-          ]
-          out = Path('/tmp/300sl_objaverse')
-          out.mkdir(parents=True, exist_ok=True)
-          found = {}
-          for uid in candidates:
-              try:
-                  paths = objaverse.load_objects(uids=[uid], download_processes=1)
-                  src = Path(paths[uid])
-                  dst = out / f'{uid}{src.suffix or ".glb"}'
-                  shutil.copy2(src, dst)
-                  found[uid] = {'source': str(src), 'artifact': dst.name, 'bytes': dst.stat().st_size}
-                  print(f'DOWNLOADED {uid}: {dst} ({dst.stat().st_size} bytes)')
-              except Exception as exc:
-                  found[uid] = {'error': repr(exc)}
-                  print(f'FAILED {uid}: {exc!r}')
-          (out / 'download_report.json').write_text(json.dumps(found, indent=2))
-          if not any('artifact' in value for value in found.values()):
-              raise SystemExit('No candidate model was downloaded')
-          PY
-          tar --zstd -cf /tmp/300sl_objaverse_sources.tar.zst -C /tmp 300sl_objaverse
-          ls -lh /tmp/300sl_objaverse_sources.tar.zst /tmp/300sl_objaverse/*
-
+          set -euxo pipefail
+          mkdir -p /tmp/300sl_mirror
+          BASE='https://mirror.traines.eu/sketchfab-backup'
+          UID='f70d74f86cac4cbfa77d43d64aed256b'
+          # Save likely directory listings for diagnosis.
+          for path in f7 f7/0d f7/0d/74 "$UID" "f7/$UID"; do
+            safe=$(echo "$path" | tr '/' '_')
+            curl -L --retry 3 --max-time 120 -sS "$BASE/$path/" -o "/tmp/300sl_mirror/index_${safe}.html" || true
+          done
+          grep -Rni "$UID\|href=" /tmp/300sl_mirror | head -300 || true
+          # Mirror uses directory indexes. Recursively traverse only the f7 prefix and
+          # accept paths containing the exact model UID.
+          wget -r -np -l 5 -e robots=off --timeout=60 --tries=2 \
+            --accept="*${UID}*" --reject='index.html*' \
+            -P /tmp/300sl_mirror/download "$BASE/f7/" || true
+          find /tmp/300sl_mirror -type f -printf '%p %s bytes\n' | sort
+          tar --zstd -cf /tmp/300sl_mirror_probe.tar.zst -C /tmp 300sl_mirror
       - uses: actions/upload-artifact@v4
         with:
-          name: 300sl-objaverse-sources
-          path: /tmp/300sl_objaverse_sources.tar.zst
+          name: 300sl-mirror-probe
+          path: /tmp/300sl_mirror_probe.tar.zst
           compression-level: 0
           retention-days: 1
