@@ -1,0 +1,38 @@
+name: Transfer 300SL Mirror Source
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate and download archived CC 300SL source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/300sl_mirror
+          BASE='https://mirror.traines.eu/sketchfab-backup'
+          MODEL_UID='f70d74f86cac4cbfa77d43d64aed256b'
+          for path in f7 f7/0d f7/0d/74 "$MODEL_UID" "f7/$MODEL_UID"; do
+            safe=$(echo "$path" | tr '/' '_')
+            curl -L --retry 3 --max-time 120 -sS "$BASE/$path/" -o "/tmp/300sl_mirror/index_${safe}.html" || true
+          done
+          grep -Rni "$MODEL_UID\|href=" /tmp/300sl_mirror | head -300 || true
+          wget -r -np -l 5 -e robots=off --timeout=60 --tries=2 \
+            --accept="*${MODEL_UID}*" --reject='index.html*' \
+            -P /tmp/300sl_mirror/download "$BASE/f7/" || true
+          find /tmp/300sl_mirror -type f -printf '%p %s bytes\n' | sort
+          tar --zstd -cf /tmp/300sl_mirror_probe.tar.zst -C /tmp 300sl_mirror
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 300sl-mirror-probe
+          path: /tmp/300sl_mirror_probe.tar.zst
+          compression-level: 0
+          retention-days: 1
