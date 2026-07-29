@@ -1,0 +1,1 @@
+This file exists only to ensure the transfer-only branch has a distinct workflow commit. The branch and PR must be closed without merge after artifact retrieval.
