@@ -1,0 +1,1 @@
+Temporary transfer-only branch used to retrieve public Mercedes 300 asset files for local Blender inspection. Do not merge.
