@@ -1,0 +1,47 @@
+name: Transfer 300SL Reference Asset
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  package-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone public reference repository with LFS
+        run: |
+          set -euxo pipefail
+          git lfs install
+          git clone --depth 1 https://github.com/utkarshroy96/Car_Configurator.git /tmp/car-configurator
+          cd /tmp/car-configurator
+          git lfs pull || true
+
+      - name: Locate and package Mercedes 300 assets
+        run: |
+          set -euxo pipefail
+          cd /tmp/car-configurator
+          echo "=== matching paths ==="
+          find Assets -type f \( -iname '*300s*' -o -iname '*300sl*' -o -path '*Mercedes-Benz 300s*' \) -print | tee /tmp/matches.txt
+          test -s /tmp/matches.txt
+          mkdir -p /tmp/package
+          while IFS= read -r f; do
+            mkdir -p "/tmp/package/$(dirname "$f")"
+            cp -a "$f" "/tmp/package/$f"
+          done < /tmp/matches.txt
+          cp /tmp/matches.txt /tmp/package/MATCHES.txt
+          tar --zstd -cf /tmp/mercedes-300-assets.tar.zst -C /tmp/package .
+          ls -lh /tmp/mercedes-300-assets.tar.zst
+          sha256sum /tmp/mercedes-300-assets.tar.zst > /tmp/mercedes-300-assets.tar.zst.sha256
+
+      - name: Upload packaged reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: mercedes-300-reference-assets
+          path: |
+            /tmp/mercedes-300-assets.tar.zst
+            /tmp/mercedes-300-assets.tar.zst.sha256
+          compression-level: 0
+          retention-days: 1
