@@ -1,0 +1,80 @@
+name: Transfer Five Car Candidates
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-candidates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Objaverse client
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install objaverse
+      - name: Fetch exact CC candidate UIDs from Objaverse mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/five-car-candidates
+          python - <<'PY'
+          import json, shutil, hashlib
+          from pathlib import Path
+          import objaverse
+
+          out = Path('/tmp/five-car-candidates')
+          targets = {
+              '01_Camaro_2010_KiW': '9fa6d9b0c4ef40ef865410334c99b5ac',
+              '02_Shelby_1967_mohamedhussien': '76dce4ea63b9406b83d8c34527bad530',
+              '03_GT350R_2016_DisneyCars': '68d385c23b3a415ab7de6f80cdc5cd70',
+              '04_Challenger_Hellcat_2015_preslav': '94208b77d32a4934afd88f52615fd4b8',
+              '05_Charger_1969_Ilya': '5d0a26841d5145289b72b7198469d872',
+          }
+
+          uids = set(objaverse.load_uids())
+          presence = {name: uid in uids for name, uid in targets.items()}
+          present_uids = [uid for name, uid in targets.items() if presence[name]]
+          print('PRESENCE', json.dumps(presence, indent=2))
+
+          annotations = objaverse.load_annotations(present_uids) if present_uids else {}
+          (out / 'exact_candidate_metadata.json').write_text(json.dumps({
+              'targets': targets,
+              'presence': presence,
+              'annotations': annotations,
+          }, indent=2, default=str))
+
+          paths = objaverse.load_objects(uids=present_uids, download_processes=4) if present_uids else {}
+          manifest = {}
+          for name, uid in targets.items():
+              if uid not in paths:
+                  manifest[name] = {'uid': uid, 'present': False}
+                  continue
+              src = Path(paths[uid])
+              dst = out / f'{name}__{uid}.glb'
+              shutil.copy2(src, dst)
+              sha = hashlib.sha256(dst.read_bytes()).hexdigest()
+              manifest[name] = {
+                  'uid': uid,
+                  'present': True,
+                  'bytes': dst.stat().st_size,
+                  'sha256': sha,
+                  'filename': dst.name,
+              }
+          (out / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+          print(json.dumps(manifest, indent=2))
+          PY
+          tar --zstd -cf /tmp/five-car-candidates.tar.zst -C /tmp five-car-candidates
+          ls -lh /tmp/five-car-candidates.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: five-car-candidates
+          path: /tmp/five-car-candidates.tar.zst
+          compression-level: 0
+          retention-days: 1
