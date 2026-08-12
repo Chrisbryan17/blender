@@ -44,7 +44,7 @@ jobs:
 
           for term in terms:
               url = 'https://api.sketchfab.com/v3/models'
-              params = {'search': term, 'downloadable': 'true', 'count': 100}
+              params = {'q': term, 'downloadable': 'true', 'count': 100}
               r = requests.get(url, params=params, headers=headers, timeout=30)
               r.raise_for_status()
               data = r.json()
@@ -72,14 +72,12 @@ jobs:
                   }
                   rows.append(row)
 
-          # Deduplicate by UID, keep the first matching search term.
           dedup = {}
           for row in rows:
               if row['uid'] and row['uid'] not in dedup:
                   dedup[row['uid']] = row
           rows = list(dedup.values())
 
-          # Commercially usable Creative Commons Attribution only.
           def is_cc_by(row):
               slug = (row.get('licenseSlug') or '').lower()
               label = (row.get('licenseLabel') or '').lower()
@@ -95,7 +93,6 @@ jobs:
           (out / 'all_search_results.json').write_text(json.dumps(rows, indent=2))
           (out / 'commercial_cc_by_candidates.json').write_text(json.dumps(usable, indent=2))
 
-          # Select mirrored candidates likely useful for the missing cars.
           selectors = {
               'Classic_Mustang_1967': lambda r: '1967' in r['name'].lower() and 'mustang' in r['name'].lower(),
               'GT350R': lambda r: 'gt350r' in re.sub(r'[^a-z0-9]', '', r['name'].lower()),
