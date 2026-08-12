@@ -31,26 +31,41 @@ jobs:
 
           out = Path('/tmp/car-fallbacks')
           terms = [
-              '1967 Mustang',
+              '1967 Mustang Fastback',
               '1967 Shelby GT500',
               'Mustang GT350R',
-              'Ford Mustang GT350R',
+              'Ford Mustang GT350',
               'Dodge Charger 1969',
-              '1969 Dodge Charger',
+              '1969 Dodge Charger R/T',
+              '1968 Dodge Charger',
+              'Dodge Charger RT classic',
           ]
           all_uids = set(objaverse.load_uids())
           rows = []
           headers = {'User-Agent': 'BlenderRobloxSourceAudit/1.0'}
 
           for term in terms:
-              url = 'https://api.sketchfab.com/v3/models'
-              params = {'q': term, 'downloadable': 'true', 'count': 100}
+              url = 'https://api.sketchfab.com/v3/search'
+              params = {
+                  'type': 'models',
+                  'q': term,
+                  'downloadable': 'true',
+                  'count': 100,
+              }
               r = requests.get(url, params=params, headers=headers, timeout=30)
               r.raise_for_status()
               data = r.json()
-              for item in data.get('results', []):
-                  lic = item.get('license') or {}
-                  slug = lic.get('slug') if isinstance(lic, dict) else str(lic)
+              results = data.get('results', [])
+              if isinstance(results, dict):
+                  results = results.get('models', [])
+              for item in results:
+                  lic = item.get('license')
+                  if isinstance(lic, dict):
+                      slug = lic.get('slug') or lic.get('uid')
+                      label = lic.get('label') or lic.get('name')
+                  else:
+                      slug = str(lic or '')
+                      label = str(lic or '')
                   uid = item.get('uid')
                   name = item.get('name') or ''
                   row = {
@@ -66,7 +81,7 @@ jobs:
                       'downloadCount': item.get('downloadCount'),
                       'isDownloadable': item.get('isDownloadable'),
                       'licenseSlug': slug,
-                      'licenseLabel': lic.get('label') if isinstance(lic, dict) else None,
+                      'licenseLabel': label,
                       'user': (item.get('user') or {}).get('displayName') or (item.get('user') or {}).get('username'),
                       'inObjaverse': uid in all_uids if uid else False,
                   }
@@ -81,7 +96,10 @@ jobs:
           def is_cc_by(row):
               slug = (row.get('licenseSlug') or '').lower()
               label = (row.get('licenseLabel') or '').lower()
-              return slug in {'by', 'cc-by', 'cc-by-4.0'} or ('attribution' in label and 'noncommercial' not in label and 'sharealike' not in label and 'no derivatives' not in label)
+              return (
+                  slug in {'by', 'cc-by', 'cc-by-4.0'}
+                  or ('attribution' in label and 'noncommercial' not in label and 'sharealike' not in label and 'no derivatives' not in label)
+              )
 
           usable = [r for r in rows if r['isDownloadable'] and is_cc_by(r)]
           usable.sort(key=lambda r: (
@@ -93,10 +111,13 @@ jobs:
           (out / 'all_search_results.json').write_text(json.dumps(rows, indent=2))
           (out / 'commercial_cc_by_candidates.json').write_text(json.dumps(usable, indent=2))
 
+          def norm(s):
+              return re.sub(r'[^a-z0-9]+', '', (s or '').lower())
+
           selectors = {
               'Classic_Mustang_1967': lambda r: '1967' in r['name'].lower() and 'mustang' in r['name'].lower(),
-              'GT350R': lambda r: 'gt350r' in re.sub(r'[^a-z0-9]', '', r['name'].lower()),
-              'Charger_1969': lambda r: 'charger' in r['name'].lower() and '1969' in r['name'].lower(),
+              'GT350': lambda r: 'gt350' in norm(r['name']) and 'mustang' in r['name'].lower(),
+              'Charger_Classic': lambda r: 'charger' in r['name'].lower() and any(y in r['name'] for y in ['1968','1969','68','69']),
           }
           selected = {}
           for key, pred in selectors.items():
@@ -124,7 +145,7 @@ jobs:
           print('SELECTED')
           print(json.dumps(manifest, indent=2))
           print('TOP USABLE')
-          print(json.dumps(usable[:30], indent=2))
+          print(json.dumps(usable[:80], indent=2))
           PY
           tar --zstd -cf /tmp/car-fallbacks.tar.zst -C /tmp car-fallbacks
           ls -lh /tmp/car-fallbacks.tar.zst
