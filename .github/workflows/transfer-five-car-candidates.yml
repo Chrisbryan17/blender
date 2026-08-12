@@ -32,10 +32,14 @@ jobs:
           out = Path('/tmp/five-car-candidates')
           targets = {
               '01_Camaro_2010_KiW': '9fa6d9b0c4ef40ef865410334c99b5ac',
-              '02_Shelby_1967_mohamedhussien': '76dce4ea63b9406b83d8c34527bad530',
-              '03_GT350R_2016_DisneyCars': '68d385c23b3a415ab7de6f80cdc5cd70',
+              '02A_Mustang_1967_NickBroad_HighPoly': '4223fcc87baa4ac58be2910a5367d7d0',
+              '02B_Mustang_1967_NickBroad_Updated': 'e06683c225c24937bb0dab09a17840da',
+              '02C_Shelby_1967_mohamedhussien': '76dce4ea63b9406b83d8c34527bad530',
+              '03A_GT350_Base_2016_kaoscontor': '1c515f5fd92047ea8eb560f3ef63563c',
+              '03B_GT350R_2016_DisneyCars': '68d385c23b3a415ab7de6f80cdc5cd70',
               '04_Challenger_Hellcat_2015_preslav': '94208b77d32a4934afd88f52615fd4b8',
-              '05_Charger_1969_Ilya': '5d0a26841d5145289b72b7198469d872',
+              '05A_Charger_1969_Ilya': '5d0a26841d5145289b72b7198469d872',
+              '05B_Charger_1969_DisneyCars': '9909b31c072446d8a3c41e8615312f55',
           }
 
           uids = set(objaverse.load_uids())
