@@ -1,0 +1,139 @@
+name: Search Objaverse Car Fallbacks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  search-fallbacks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install objaverse requests
+      - name: Search Sketchfab public metadata and retrieve Objaverse mirrors
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/car-fallbacks
+          python - <<'PY'
+          import json, re, shutil, hashlib
+          from pathlib import Path
+          import requests, objaverse
+
+          out = Path('/tmp/car-fallbacks')
+          terms = [
+              '1967 Mustang',
+              '1967 Shelby GT500',
+              'Mustang GT350R',
+              'Ford Mustang GT350R',
+              'Dodge Charger 1969',
+              '1969 Dodge Charger',
+          ]
+          all_uids = set(objaverse.load_uids())
+          rows = []
+          headers = {'User-Agent': 'BlenderRobloxSourceAudit/1.0'}
+
+          for term in terms:
+              url = 'https://api.sketchfab.com/v3/models'
+              params = {'search': term, 'downloadable': 'true', 'count': 100}
+              r = requests.get(url, params=params, headers=headers, timeout=30)
+              r.raise_for_status()
+              data = r.json()
+              for item in data.get('results', []):
+                  lic = item.get('license') or {}
+                  slug = lic.get('slug') if isinstance(lic, dict) else str(lic)
+                  uid = item.get('uid')
+                  name = item.get('name') or ''
+                  row = {
+                      'term': term,
+                      'uid': uid,
+                      'name': name,
+                      'viewerUrl': item.get('viewerUrl'),
+                      'publishedAt': item.get('publishedAt'),
+                      'vertexCount': item.get('vertexCount'),
+                      'faceCount': item.get('faceCount'),
+                      'likeCount': item.get('likeCount'),
+                      'viewCount': item.get('viewCount'),
+                      'downloadCount': item.get('downloadCount'),
+                      'isDownloadable': item.get('isDownloadable'),
+                      'licenseSlug': slug,
+                      'licenseLabel': lic.get('label') if isinstance(lic, dict) else None,
+                      'user': (item.get('user') or {}).get('displayName') or (item.get('user') or {}).get('username'),
+                      'inObjaverse': uid in all_uids if uid else False,
+                  }
+                  rows.append(row)
+
+          # Deduplicate by UID, keep the first matching search term.
+          dedup = {}
+          for row in rows:
+              if row['uid'] and row['uid'] not in dedup:
+                  dedup[row['uid']] = row
+          rows = list(dedup.values())
+
+          # Commercially usable Creative Commons Attribution only.
+          def is_cc_by(row):
+              slug = (row.get('licenseSlug') or '').lower()
+              label = (row.get('licenseLabel') or '').lower()
+              return slug in {'by', 'cc-by', 'cc-by-4.0'} or ('attribution' in label and 'noncommercial' not in label and 'sharealike' not in label and 'no derivatives' not in label)
+
+          usable = [r for r in rows if r['isDownloadable'] and is_cc_by(r)]
+          usable.sort(key=lambda r: (
+              1 if r['inObjaverse'] else 0,
+              r.get('likeCount') or 0,
+              r.get('faceCount') or 0,
+          ), reverse=True)
+
+          (out / 'all_search_results.json').write_text(json.dumps(rows, indent=2))
+          (out / 'commercial_cc_by_candidates.json').write_text(json.dumps(usable, indent=2))
+
+          # Select mirrored candidates likely useful for the missing cars.
+          selectors = {
+              'Classic_Mustang_1967': lambda r: '1967' in r['name'].lower() and 'mustang' in r['name'].lower(),
+              'GT350R': lambda r: 'gt350r' in re.sub(r'[^a-z0-9]', '', r['name'].lower()),
+              'Charger_1969': lambda r: 'charger' in r['name'].lower() and '1969' in r['name'].lower(),
+          }
+          selected = {}
+          for key, pred in selectors.items():
+              choices = [r for r in usable if r['inObjaverse'] and pred(r)]
+              if choices:
+                  selected[key] = choices[0]
+
+          present_uids = [r['uid'] for r in selected.values()]
+          paths = objaverse.load_objects(uids=present_uids, download_processes=4) if present_uids else {}
+          manifest = {}
+          for key, row in selected.items():
+              uid = row['uid']
+              src = Path(paths[uid])
+              safe = re.sub(r'[^A-Za-z0-9_.-]+', '_', row['name']).strip('_')[:80]
+              dst = out / f'{key}__{safe}__{uid}.glb'
+              shutil.copy2(src, dst)
+              manifest[key] = {
+                  **row,
+                  'filename': dst.name,
+                  'bytes': dst.stat().st_size,
+                  'sha256': hashlib.sha256(dst.read_bytes()).hexdigest(),
+              }
+
+          (out / 'selected_manifest.json').write_text(json.dumps(manifest, indent=2))
+          print('SELECTED')
+          print(json.dumps(manifest, indent=2))
+          print('TOP USABLE')
+          print(json.dumps(usable[:30], indent=2))
+          PY
+          tar --zstd -cf /tmp/car-fallbacks.tar.zst -C /tmp car-fallbacks
+          ls -lh /tmp/car-fallbacks.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: car-fallbacks
+          path: /tmp/car-fallbacks.tar.zst
+          compression-level: 0
+          retention-days: 1
