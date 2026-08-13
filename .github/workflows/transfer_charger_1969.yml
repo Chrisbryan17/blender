@@ -1,0 +1,31 @@
+name: Transfer Charger 1969 source
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Nexora mesh archive
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 3 \
+            'https://huggingface.co/datasets/ArkAiLab-Adl/Nexora-3d-mesh-dataset-v1-mini/resolve/main/mesh/mesh.zip' \
+            -o /tmp/mesh.zip
+          unzip -l /tmp/mesh.zip | tee /tmp/mesh-list.txt
+          mkdir -p /tmp/charger
+          unzip -j /tmp/mesh.zip '*mesh_0002.glb' -d /tmp/charger
+          test -s /tmp/charger/mesh_0002.glb
+          cp /tmp/mesh-list.txt /tmp/charger/
+          sha256sum /tmp/charger/mesh_0002.glb > /tmp/charger/mesh_0002.glb.sha256
+          tar --zstd -cf /tmp/charger1969.tar.zst -C /tmp charger
+          ls -lh /tmp/charger1969.tar.zst /tmp/charger/mesh_0002.glb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: charger1969-source
+          path: /tmp/charger1969.tar.zst
+          compression-level: 0
+          retention-days: 1
