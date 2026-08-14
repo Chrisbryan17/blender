@@ -1,0 +1,47 @@
+name: Transfer modern car donors v2
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download CC-BY Sketchfab models through Objaverse
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install objaverse
+          python - <<'PY'
+          import objaverse, pathlib, shutil, json, os
+          uids = [
+              'b2845536739542e1a4493a192990f91b',  # 2010 Camaro SS, CC-BY, ~175k tris
+              '68d385c23b3a415ab7de6f80cdc5cd70',  # 2016 GT350R, CC-BY, ~161k tris
+              '71844c018a8949598d3dbeeae6a09d54',  # 2015 Challenger Hellcat, CC-BY, ~120k tris
+          ]
+          out = pathlib.Path('/tmp/modern-car-donors-v2')
+          out.mkdir(parents=True, exist_ok=True)
+          paths = objaverse.load_objects(uids=uids, download_processes=1)
+          manifest = {}
+          for uid in uids:
+              p = pathlib.Path(paths[uid])
+              dest = out / f'{uid}{p.suffix or ".glb"}'
+              shutil.copy2(p, dest)
+              manifest[uid] = {'source': str(p), 'file': dest.name, 'bytes': dest.stat().st_size}
+          (out/'manifest.json').write_text(json.dumps(manifest, indent=2))
+          print(json.dumps(manifest, indent=2))
+          PY
+          tar --zstd -cf /tmp/modern-car-donors-v2.tar.zst -C /tmp modern-car-donors-v2
+          ls -lh /tmp/modern-car-donors-v2.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modern-car-donors-v2
+          path: /tmp/modern-car-donors-v2.tar.zst
+          compression-level: 0
+          retention-days: 1
